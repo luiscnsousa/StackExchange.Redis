@@ -49,16 +49,17 @@ namespace StackExchange.Redis
         internal virtual T ExecuteSync<T>(Message message, ResultProcessor<T> processor, ServerEndPoint server = null)
         {
             if (message == null) return default(T); // no-op
-            var sw = new System.Diagnostics.Stopwatch();
-            sw.Start();
+            var sw1 = new System.Diagnostics.Stopwatch();
+            sw1.Start();
             // work start 
             multiplexer.CheckMessage(message);
             // work end
-            sw.Stop();
-            if (sw.ElapsedMilliseconds > 1000)
+            sw1.Stop();
+            if (sw1.ElapsedMilliseconds > 1500)
             {
-                Serilog.Log.Warning("Spent more than 1s on RedisBase.ExecuteSync<T>()");
+                Serilog.Log.Warning($"Spent more than 1.5s on RedisBase.ExecuteSync<T>() [CheckMessage(message)] -> {sw1.ElapsedMilliseconds}ms");
             }
+
             return multiplexer.ExecuteSyncImpl<T>(message, processor, server);
         }
 

@@ -2798,9 +2798,9 @@ namespace StackExchange.Redis
 
                     // work end ----------- sw1
                     sw1.Stop();
-                    if (sw1.ElapsedMilliseconds > 1000)
+                    if (sw1.ElapsedMilliseconds > 1500)
                     {
-                        Serilog.Log.Warning($"Spent more than 1s on ConnectionMultiplexer.ExecuteSyncImpl() [lock (source)] -> {sw1.ElapsedMilliseconds}ms");
+                        Serilog.Log.Warning($"Spent more than 1.5s on ConnectionMultiplexer.ExecuteSyncImpl() [lock (source)] -> {sw1.ElapsedMilliseconds}ms");
                     }
 
                     var sw2 = new Stopwatch();
@@ -2813,9 +2813,9 @@ namespace StackExchange.Redis
 
                     // work end ----------- sw2
                     sw2.Stop();
-                    if (sw2.ElapsedMilliseconds > 1000)
+                    if (sw2.ElapsedMilliseconds > 1500)
                     {
-                        Serilog.Log.Warning($"Spent more than 1s on ConnectionMultiplexer.ExecuteSyncImpl() [TryPushMessageToBridgeSync] -> {sw2.ElapsedMilliseconds}ms");
+                        Serilog.Log.Warning($"Spent more than 1.5s on ConnectionMultiplexer.ExecuteSyncImpl() [TryPushMessageToBridgeSync] -> {sw2.ElapsedMilliseconds}ms");
                     }
 
                     if (result != WriteResult.Success)
@@ -2823,30 +2823,12 @@ namespace StackExchange.Redis
                         throw GetException(result, message, server);
                     }
 
-                    var sw3 = new Stopwatch();
-                    sw3.Start();
-                    // work start ----------- sw3
-
                     if (Monitor.Wait(source, TimeoutMilliseconds))
                     {
-                        // work end ----------- sw3
-                        sw3.Stop();
-                        if (sw3.ElapsedMilliseconds > 1000)
-                        {
-                            Serilog.Log.Warning($"Spent more than 1s on ConnectionMultiplexer.ExecuteSyncImpl() [Monitor.Wait] -> {sw3.ElapsedMilliseconds}ms");
-                        }
-
                         Trace("Timeley response to " + message);
                     }
                     else
                     {
-                        // work end ----------- sw3
-                        sw3.Stop();
-                        if (sw3.ElapsedMilliseconds > 1000)
-                        {
-                            Serilog.Log.Warning($"Spent more than 1s on ConnectionMultiplexer.ExecuteSyncImpl() [Monitor.Wait] -> {sw3.ElapsedMilliseconds}ms");
-                        }
-
                         Trace("Timeout performing " + message);
                         Interlocked.Increment(ref syncTimeouts);
                         throw ExceptionFactory.Timeout(this, null, message, server);

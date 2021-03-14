@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -235,7 +234,28 @@ namespace StackExchange.Redis
         public override string ToString() => Format.ToString(EndPoint);
 
         [Obsolete("prefer async")]
-        public WriteResult TryWriteSync(Message message) => GetBridge(message.Command)?.TryWriteSync(message, isReplica) ?? WriteResult.NoConnectionAvailable;
+        public WriteResult TryWriteSync(Message message)
+        {
+            WriteResult result = WriteResult.NoConnectionAvailable;
+
+            var sw1 = new System.Diagnostics.Stopwatch();
+            sw1.Start();
+            // work start 
+            var bridge = GetBridge(message.Command);
+            // work end
+            sw1.Stop();
+            if (sw1.ElapsedMilliseconds > 1500)
+            {
+                Serilog.Log.Warning($"Spent more than 1.5s on ServerEndPoint.TryWriteSync() [GetBridge(message.Command)] -> {sw1.ElapsedMilliseconds}ms");
+            }
+
+            if (bridge != null)
+            {
+                result = bridge.TryWriteSync(message, isReplica);
+            }
+
+            return result;
+        }
 
         public ValueTask<WriteResult> TryWriteAsync(Message message) => GetBridge(message.Command)?.TryWriteAsync(message, isReplica) ?? new ValueTask<WriteResult>(WriteResult.NoConnectionAvailable);
 

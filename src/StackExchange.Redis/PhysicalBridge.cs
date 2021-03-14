@@ -226,9 +226,9 @@ namespace StackExchange.Redis
         private Channel<PendingSubscriptionState> _subscriptionBackgroundQueue;
         private static readonly UnboundedChannelOptions s_subscriptionQueueOptions = new UnboundedChannelOptions
         {
-             AllowSynchronousContinuations = false, // we do *not* want the async work to end up on the caller's thread
-             SingleReader = true, // only one reader will be started per channel
-             SingleWriter = true, // writes will be synchronized, because order matters
+            AllowSynchronousContinuations = false, // we do *not* want the async work to end up on the caller's thread
+            SingleReader = true, // only one reader will be started per channel
+            SingleWriter = true, // writes will be synchronized, because order matters
         };
 
         private Channel<PendingSubscriptionState> GetSubscriptionQueue()
@@ -291,7 +291,7 @@ namespace StackExchange.Redis
             out BacklogStatus bs, out PhysicalConnection.ReadStatus rs, out PhysicalConnection.WriteStatus ws)
         {
             inst = (int)(Interlocked.Read(ref operationCount) - Interlocked.Read(ref profileLastLog));
-            lock(_backlog)
+            lock (_backlog)
             {
                 qu = _backlog.Count;
             }
@@ -707,14 +707,35 @@ namespace StackExchange.Redis
         internal WriteResult WriteMessageTakingWriteLockSync(PhysicalConnection physical, Message message)
         {
             Trace("Writing: " + message);
+            var sw1 = new Stopwatch();
+            sw1.Start();
+            // work start 
             message.SetEnqueued(physical); // this also records the read/write stats at this point
+            // work end
+            sw1.Stop();
+            if (sw1.ElapsedMilliseconds > 1500)
+            {
+                Serilog.Log.Warning($"Spent more than 1.5s on PhysicalBridge.WriteMessageTakingWriteLockSync() [SetEnqueued(physical)] -> {sw1.ElapsedMilliseconds}ms");
+            }
 
             LockToken token = default;
             try
             {
+                var sw2 = new Stopwatch();
+                sw2.Start();
+                // work start 
                 token = _singleWriterMutex.TryWait(WaitOptions.NoDelay);
+                // work end
+                sw2.Stop();
+                if (sw2.ElapsedMilliseconds > 1500)
+                {
+                    Serilog.Log.Warning($"Spent more than 1.5s on PhysicalBridge.WriteMessageTakingWriteLockSync() [TryWait(WaitOptions.NoDelay)] -> {sw2.ElapsedMilliseconds}ms");
+                }
                 if (!token.Success)
                 {
+                    //Serilog.Log.Warning($"!!! PhysicalBridge.WriteMessageTakingWriteLockSync() [!token.Success] !!!");
+                    // THIS IS HAPPENING VEEEEEEERY OFTEN, why?
+
                     // we can't get it *instantaneously*; is there
                     // perhaps a backlog and active backlog processor?
                     if (PushToBacklog(message, onlyIfExists: true)) return WriteResult.Success; // queued counts as success
@@ -722,17 +743,46 @@ namespace StackExchange.Redis
                     // no backlog... try to wait with the timeout;
                     // if we *still* can't get it: that counts as
                     // an actual timeout
+
+                    var sw3 = new Stopwatch();
+                    sw3.Start();
+                    // work start 
                     token = _singleWriterMutex.TryWait();
+                    // work end
+                    sw3.Stop();
+                    if (sw3.ElapsedMilliseconds > 1500)
+                    {
+                        Serilog.Log.Warning($"Spent more than 1.5s on PhysicalBridge.WriteMessageTakingWriteLockSync() [TryWait()] -> {sw3.ElapsedMilliseconds}ms");
+                    }
+
                     if (!token.Success) return TimedOutBeforeWrite(message);
                 }
 
+                var sw4 = new Stopwatch();
+                sw4.Start();
+                // work start 
                 var result = WriteMessageInsideLock(physical, message);
+                // work end
+                sw4.Stop();
+                if (sw4.ElapsedMilliseconds > 1500)
+                {
+                    Serilog.Log.Warning($"Spent more than 1.5s on PhysicalBridge.WriteMessageTakingWriteLockSync() [WriteMessageInsideLock(...)] -> {sw4.ElapsedMilliseconds}ms");
+                }
 
                 if (result == WriteResult.Success)
                 {
+                    var sw5 = new Stopwatch();
+                    sw5.Start();
+                    // work start 
 #pragma warning disable CS0618
                     result = physical.FlushSync(false, TimeoutMilliseconds);
 #pragma warning restore CS0618
+                    // work end
+                    sw5.Stop();
+                    if (sw5.ElapsedMilliseconds > 1500)
+                    {
+                        Serilog.Log.Warning($"Spent more than 1.5s on PhysicalBridge.WriteMessageTakingWriteLockSync() [FlushSync(...)] -> {sw5.ElapsedMilliseconds}ms");
+                    }
                 }
 
                 physical.SetIdle();
@@ -750,6 +800,10 @@ namespace StackExchange.Redis
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool PushToBacklog(Message message, bool onlyIfExists)
         {
+            var sw1 = new Stopwatch();
+            sw1.Start();
+            // work start 
+
             bool wasEmpty;
             lock (_backlog)
             {
@@ -761,6 +815,14 @@ namespace StackExchange.Redis
                 _backlog.Enqueue(message);
             }
             if (wasEmpty) StartBacklogProcessor();
+
+            // work end
+            sw1.Stop();
+            if (sw1.ElapsedMilliseconds > 1500)
+            {
+                Serilog.Log.Warning($"Spent more than 1.5s on PhysicalBridge.PushToBacklog() -> {sw1.ElapsedMilliseconds}ms");
+            }
+
             return true;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -848,7 +910,7 @@ namespace StackExchange.Redis
                 // so now we are the writer; write some things!
                 Message message;
                 var timeout = TimeoutMilliseconds;
-                while(true)
+                while (true)
                 {
                     _backlogStatus = BacklogStatus.CheckingForWork;
                     lock (_backlog)
@@ -914,7 +976,7 @@ namespace StackExchange.Redis
                 _backlogStatus = BacklogStatus.Faulted;
             }
             finally
-            {   
+            {
                 token.Dispose();
             }
         }
@@ -988,7 +1050,7 @@ namespace StackExchange.Redis
 
                     result = flush.Result; // we know it was completed, this is fine
                 }
-                
+
                 physical.SetIdle();
 
                 return new ValueTask<WriteResult>(result);
@@ -1020,7 +1082,7 @@ namespace StackExchange.Redis
         volatile int _maxLockDuration = -1;
 #endif
 
-    private async ValueTask<WriteResult> WriteMessageTakingWriteLockAsync_Awaited(ValueTask<LockToken> pending, PhysicalConnection physical, Message message)
+        private async ValueTask<WriteResult> WriteMessageTakingWriteLockAsync_Awaited(ValueTask<LockToken> pending, PhysicalConnection physical, Message message)
         {
             try
             {
@@ -1036,7 +1098,7 @@ namespace StackExchange.Redis
                     {
                         result = await physical.FlushAsync(false).ForAwait();
                     }
-                    
+
                     physical.SetIdle();
 
 #if DEBUG
@@ -1195,7 +1257,7 @@ namespace StackExchange.Redis
                 {
                     throw ExceptionFactory.MasterOnly(Multiplexer.IncludeDetailInExceptions, message.Command, message, ServerEndPoint);
                 }
-                switch(cmd)
+                switch (cmd)
                 {
                     case RedisCommand.QUIT:
                         connection.RecordQuit();

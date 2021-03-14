@@ -2538,9 +2538,9 @@ namespace StackExchange.Redis
             var msg = GetStringSetMessage(key, value, expiry, when, flags);
             // work end
             sw.Stop();
-            if (sw.ElapsedMilliseconds > 1000)
+            if (sw.ElapsedMilliseconds > 1500)
             {
-                Serilog.Log.Warning("Spent more than 1s on RedisDatabase.StringSet()");
+                Serilog.Log.Warning("Spent more than 1.5s on RedisDatabase.StringSet()");
             }
             return ExecuteSync(msg, ResultProcessor.Boolean);
         }
