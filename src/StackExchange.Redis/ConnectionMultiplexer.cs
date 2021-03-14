@@ -1,19 +1,19 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Reflection;
-using System.IO.Compression;
-using System.Runtime.CompilerServices;
-using StackExchange.Redis.Profiling;
 using Pipelines.Sockets.Unofficial;
-using System.ComponentModel;
+using StackExchange.Redis.Profiling;
 
 namespace StackExchange.Redis
 {
@@ -2787,24 +2787,66 @@ namespace StackExchange.Redis
             }
             else
             {
+                var sw1 = new Stopwatch();
+                sw1.Start();
+                // work start ----------- sw1
+
                 var source = SimpleResultBox<T>.Get();
 
                 lock (source)
                 {
+
+                    // work end ----------- sw1
+                    sw1.Stop();
+                    if (sw1.ElapsedMilliseconds > 1000)
+                    {
+                        Serilog.Log.Warning($"Spent more than 1s on ConnectionMultiplexer.ExecuteSyncImpl() [lock (source)] -> {sw1.ElapsedMilliseconds}ms");
+                    }
+
+                    var sw2 = new Stopwatch();
+                    sw2.Start();
+                    // work start ----------- sw2
+
 #pragma warning disable CS0618
                     var result = TryPushMessageToBridgeSync(message, processor, source, ref server);
 #pragma warning restore CS0618
+
+                    // work end ----------- sw2
+                    sw2.Stop();
+                    if (sw2.ElapsedMilliseconds > 1000)
+                    {
+                        Serilog.Log.Warning($"Spent more than 1s on ConnectionMultiplexer.ExecuteSyncImpl() [TryPushMessageToBridgeSync] -> {sw2.ElapsedMilliseconds}ms");
+                    }
+
                     if (result != WriteResult.Success)
                     {
                         throw GetException(result, message, server);
                     }
 
+                    var sw3 = new Stopwatch();
+                    sw3.Start();
+                    // work start ----------- sw3
+
                     if (Monitor.Wait(source, TimeoutMilliseconds))
                     {
+                        // work end ----------- sw3
+                        sw3.Stop();
+                        if (sw3.ElapsedMilliseconds > 1000)
+                        {
+                            Serilog.Log.Warning($"Spent more than 1s on ConnectionMultiplexer.ExecuteSyncImpl() [Monitor.Wait] -> {sw3.ElapsedMilliseconds}ms");
+                        }
+
                         Trace("Timeley response to " + message);
                     }
                     else
                     {
+                        // work end ----------- sw3
+                        sw3.Stop();
+                        if (sw3.ElapsedMilliseconds > 1000)
+                        {
+                            Serilog.Log.Warning($"Spent more than 1s on ConnectionMultiplexer.ExecuteSyncImpl() [Monitor.Wait] -> {sw3.ElapsedMilliseconds}ms");
+                        }
+
                         Trace("Timeout performing " + message);
                         Interlocked.Increment(ref syncTimeouts);
                         throw ExceptionFactory.Timeout(this, null, message, server);
@@ -2812,7 +2854,7 @@ namespace StackExchange.Redis
                     }
                 }
                 // snapshot these so that we can recycle the box
-                var  val = source.GetResult(out var ex, canRecycle: true); // now that we aren't locking it...
+                var val = source.GetResult(out var ex, canRecycle: true); // now that we aren't locking it...
                 if (ex != null) throw ex;
                 Trace(message + " received " + val);
                 return val;

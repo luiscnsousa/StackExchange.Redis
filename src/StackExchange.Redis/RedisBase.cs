@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace StackExchange.Redis
@@ -50,7 +49,16 @@ namespace StackExchange.Redis
         internal virtual T ExecuteSync<T>(Message message, ResultProcessor<T> processor, ServerEndPoint server = null)
         {
             if (message == null) return default(T); // no-op
+            var sw = new System.Diagnostics.Stopwatch();
+            sw.Start();
+            // work start 
             multiplexer.CheckMessage(message);
+            // work end
+            sw.Stop();
+            if (sw.ElapsedMilliseconds > 1000)
+            {
+                Serilog.Log.Warning("Spent more than 1s on RedisBase.ExecuteSync<T>()");
+            }
             return multiplexer.ExecuteSyncImpl<T>(message, processor, server);
         }
 
@@ -102,9 +110,9 @@ namespace StackExchange.Redis
         {
             // do the best we can with available commands
             var map = multiplexer.CommandMap;
-            if(map.IsAvailable(RedisCommand.PING))
+            if (map.IsAvailable(RedisCommand.PING))
                 return ResultProcessor.TimingProcessor.CreateMessage(-1, flags, RedisCommand.PING);
-            if(map.IsAvailable(RedisCommand.TIME))
+            if (map.IsAvailable(RedisCommand.TIME))
                 return ResultProcessor.TimingProcessor.CreateMessage(-1, flags, RedisCommand.TIME);
             if (map.IsAvailable(RedisCommand.ECHO))
                 return ResultProcessor.TimingProcessor.CreateMessage(-1, flags, RedisCommand.ECHO, RedisLiterals.PING);

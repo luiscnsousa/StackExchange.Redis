@@ -1395,7 +1395,7 @@ namespace StackExchange.Redis
 
         public Task<RedisValue[]> SetPopAsync(RedisKey key, long count, CommandFlags flags = CommandFlags.None)
         {
-            if(count == 0) return Task.FromResult(Array.Empty<RedisValue>());
+            if (count == 0) return Task.FromResult(Array.Empty<RedisValue>());
             var msg = count == 1
                     ? Message.Create(Database, flags, RedisCommand.SPOP, key)
                     : Message.Create(Database, flags, RedisCommand.SPOP, key, count);
@@ -1934,7 +1934,7 @@ namespace StackExchange.Redis
                 key,
                 groupName,
                 position,
-                true, 
+                true,
                 flags);
         }
 
@@ -2252,7 +2252,7 @@ namespace StackExchange.Redis
                 false,
                 flags);
         }
-        
+
         public Task<StreamEntry[]> StreamReadGroupAsync(RedisKey key, RedisValue groupName, RedisValue consumerName, RedisValue? position = null, int? count = null, bool noAck = false, CommandFlags flags = CommandFlags.None)
         {
             var actualPosition = position ?? StreamPosition.NewMessages;
@@ -2532,7 +2532,16 @@ namespace StackExchange.Redis
 
         public bool StringSet(RedisKey key, RedisValue value, TimeSpan? expiry = null, When when = When.Always, CommandFlags flags = CommandFlags.None)
         {
+            var sw = new System.Diagnostics.Stopwatch();
+            sw.Start();
+            // work start 
             var msg = GetStringSetMessage(key, value, expiry, when, flags);
+            // work end
+            sw.Stop();
+            if (sw.ElapsedMilliseconds > 1000)
+            {
+                Serilog.Log.Warning("Spent more than 1s on RedisDatabase.StringSet()");
+            }
             return ExecuteSync(msg, ResultProcessor.Boolean);
         }
 
